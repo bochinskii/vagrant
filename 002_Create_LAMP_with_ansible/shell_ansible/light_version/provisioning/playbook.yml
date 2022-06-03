@@ -1,0 +1,116 @@
+---
+
+- name: LAMP Installation
+  hosts: all
+  become: yes
+
+  vars:
+    source_content_folder: data
+    destination_content_folder: /var/www/html
+
+  tasks:
+
+  - name: Install apache2
+    apt:
+      pkg:
+        - apache2
+        - apache2-utils
+      state: latest
+      update_cache: yes
+
+  - name: Create a new ext4 primary partition
+    community.general.parted:
+      device: /dev/sdc
+      label: msdos
+      number: 1
+      part_start: 1MiB
+      part_end: "100%"
+      state: present
+      fs_type: ext4
+
+  - name: Create a ext4 filesystem on /dev/sdc1
+    community.general.filesystem:
+      fstype: ext4
+      dev: /dev/sdc1
+
+  - name: Mount sdc1 to /var/www/html
+    ansible.posix.mount:
+      path: "{{ destination_content_folder }}"
+      src: /dev/sdc1
+      fstype: ext4
+      state: mounted
+
+  - name: Start apache2 server
+    systemd:
+      name: apache2
+      enabled: yes
+      masked: no
+      state: started
+
+  - name: Copy content
+    copy:
+      src: "{{ source_content_folder }}/{{ item }}"
+      dest: "{{ destination_content_folder }}/{{ item }}"
+    with_items:
+      - index.html
+      - info.php
+    notify:
+    - Restart_Apache
+
+  - name: Install PHP
+    apt:
+      pkg:
+       - php8.1
+       - php8.1-fpm
+       - libapache2-mod-php8.1
+       - php8.1-mysql
+       - php-common
+       - php8.1-cli
+       - php8.1-common
+       - php8.1-opcache
+       - php8.1-readline
+       - php8.1-mbstring
+       - php8.1-xml
+       - php8.1-gd
+       - php8.1-curl
+      state: latest
+      update_cache: yes
+
+  - name: Start PHP-FPM server
+    systemd:
+      name: php8.1-fpm
+      enabled: yes
+      masked: no
+      state: started
+    notify:
+    - Restart_Apache
+
+  - name: Install MariaDB
+    apt:
+      pkg:
+        - mariadb-server
+        - mariadb-client
+      state: latest
+      update_cache: yes
+
+  - name: Start MariaDB server
+    systemd:
+      name: mariadb.service
+      enabled: yes
+      masked: no
+      state: started
+    notify:
+    - Restart_PHP
+    - Restart_Apache
+
+  handlers:
+
+    - name: Restart_Apache
+      systemd:
+        name: apache2
+        state: restarted
+
+    - name: Restart_PHP
+      systemd:
+        name: php8.1-fpm
+        state: restarted

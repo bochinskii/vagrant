@@ -1,0 +1,334 @@
+
+--------------------------------------------
+
+Создание виртуальной машины с помощью vagrant
+
+--------------------------------------------
+
+Заходим в vagrant хранилище: https://app.vagrantup.com/boxes/search
+ищем нужный дистрибутив (нам нужно его название) - ubuntu/jammy64.
+
+Созаддим рабочую директорию
+
+$ mkdir ./001_Create_virtual_machine && cd ./001_Create_virtual_machine
+
+$ ls -la
+otal 8
+drwxrwxr-x 2 denisb denisb 4096 июн  3 14:53 .
+drwxrwxr-x 4 denisb denisb 4096 июн  3 14:53 ..
+
+Запустив данную команду мы сгенерируем начальный файл - Vagrantfile
+
+$ vagrant init ubuntu/jammy64
+
+A `Vagrantfile` has been placed in this directory. You are now
+ready to `vagrant up` your first virtual environment! Please read
+the comments in the Vagrantfile as well as documentation on
+`vagrantup.com` for more information on using Vagrant.
+
+
+$ ls -la
+total 12
+drwxrwxr-x 2 denisb denisb 4096 июн  3 14:59 .
+drwxrwxr-x 4 denisb denisb 4096 июн  3 14:53 ..
+-rw-rw-r-- 1 denisb denisb 3020 июн  3 14:59 Vagrantfile
+
+
+Теперь займемся созданием виртуальной машины.
+
+Создадим виртуальную машину с такими параметрами:
+- 2ГБ оперативной памяти,
+- 6 виртуальными процессорами,
+- дополнительным жестким диском - 20ГБ (в дальнейшем мы его используем в качестве хранения контента для web).
+
+Заметим, что на диск с операционной системой повлиять никак нельзя.
+Т.е. у нас будет диск с операционной системой - 40ГБ (по умолчанию) и диск на - 20ГБ.
+
+- Сетевым адаптером - сетевой мост. Пусть получает настройки из DHCP.
+
+По факту сетевой интерфейс NAT создается всегда, но мы еще создадим сетевой интерфейс типа - сетевой мост.
+Тип он будет иметь - 82543GC (для серверов). Кстати, поэтому мы и удалим в Vargantfile маршрут по-умолчанию
+ведущий через NAT интерфейс (ip route del default via 10.0.2.2).
+
+Приведем наш vagrantfile к такому виду
+(там легко, вот документация - https://www.vagrantup.com/docs/index)
+
+*************************************************************
+
+Vagrant.configure("2") do |config|
+
+  config.vm.box = "ubuntu/jammy64"
+  config.vm.define "web"        # name in vagrant
+  config.vm.hostname = "web"    # hostname
+
+  config.vm.network "public_network", bridge: "wlp3s0",
+    use_dhcp_assigned_default_route: true
+
+  # VAGRANT_EXPERIMENTAL="disks"
+  config.vm.disk :disk, name: "content", size: "20GB"
+
+  config.vm.provider "virtualbox" do |vb|
+
+     vb.name = "web-jammy"            # name in VirtualBox
+
+     vb.memory = "2048"
+     vb.cpus = 6
+
+     vb.default_nic_type = "82543GC"
+
+   end
+
+  config.vm.provision "shell", inline: <<-SHELL
+    ip route del default via 10.0.2.2
+  SHELL
+
+
+end
+
+*************************************************************
+
+Экспортируем переменную - VAGRANT_EXPERIMENTAL т.к. на данный момент настройка диска через
+Vagrantfile является эксперементальной. Чтобы настройки диска применились нужно
+данную переменную обозначить как - disks
+
+$ export VAGRANT_EXPERIMENTAL="disks"
+
+$ vagrant up
+
+...
+
+
+Vagrant скачал образ - "ubuntu/jammy64", после создал виртуальную машину и запустил ее.
+
+Образ системы в vagrant называются - box.
+Посмотреть скачанные образы можно так
+(у нас скачан только образ - ubuntu/jammy64.)
+
+$ vagrant box list
+ubuntu/jammy64 (virtualbox, 20220531.0.0)
+
+По поводу box мы еще поговрим позже, а сейчас продолжим.
+
+
+
+
+Чтобы попасть на созданную виртуальную машину по ssh через vagrant
+
+$ vagrant ssh web
+
+vagrant@web:~$
+
+
+Если мы хотим попасть по сетевому стеку, то нужно посмотреть параметры
+
+$ vagrant ssh-config web
+
+Host web
+  HostName 127.0.0.1
+  User vagrant
+  Port 2222
+  UserKnownHostsFile /dev/null
+  StrictHostKeyChecking no
+  PasswordAuthentication no
+  IdentityFile /home/denisb/WORK/vagrant/001_Create_virtual_machine/.vagrant/machines/web/virtualbox/private_key
+  IdentitiesOnly yes
+  LogLevel FATAL
+
+
+Теперь заходим
+
+$ ssh vagrant@127.0.0.1 -p 2222 -i /vagrant/001_Create_virtual_machine/.vagrant/machines/web/virtualbox/private_key
+
+vagrant@web:~$ ip route sh
+default via 192.168.0.1 dev enp0s8 proto dhcp src 192.168.0.108 metric 100
+...
+vagrant@web:~$ exit
+
+
+
+Чтобы выключить машину
+
+$ vagrant halt web
+
+Чтобы включить
+
+$ vagrant up web
+
+Удалить виртуальную машину можно
+
+$ vagrant destroy web
+
+или без лишних вопросов
+
+$ vagrant destroy web -f
+
+
+
+А теперь такой момент. Что если мы внесли изменения/что-то добавили в Vagrantfile, а именно в часть с provision (shell).
+Логика подсказывает снова выполнить команду - up. А может сначала - halt, а потом - up. Но нет. Никаких изменений не будет.
+
+Тут есть три пути. Первый тоже логичный - сначала удалить машину - destroy, а потом - up. И таки - да. Это сработает.
+Но что если мы не хотим "убивать" машину, что если мы хотим чтобы "накатились" только изменения из provision.
+
+Тогда вырисовывается второй путь - зайти по ssh и накатить вручную.
+
+Но есть более изящный путь - третий. Он заключается в том, что вы сделали изменения
+в Vagrantfile в области provision (shell), а далее нужно ввести команду
+
+$ vagrant up --provision
+
+Вот пример.
+Добавим в наш Vagrantfile строчки с установкой нашего 20ГБ диска (строчки - Add content disk).
+
+
+********************************
+
+Vagrant.configure("2") do |config|
+
+  ...
+
+  config.vm.provision "shell", inline: <<-SHELL
+    ip route del default via 10.0.2.2
+    # Add content disk
+    parted /dev/sdc mklabel msdos
+    parted /dev/sdc mkpart primary ext4 10MiB 100%
+    mkfs.ext4 /dev/sdc1
+    mount /dev/sdc1 /mnt
+  SHELL
+
+end
+
+*********************************
+
+Напомню, что наша машина включена.
+
+Выполняем комманду
+
+$ vagrant up
+
+Bringing machine 'web' up with 'virtualbox' provider...
+==> web: Checking if box 'ubuntu/jammy64' version '20220531.0.0' is up to date...
+==> web: Machine already provisioned. Run `vagrant provision` or use the `--provision`
+==> web: flag to force provisioning. Provisioners marked to run always will still run.
+
+
+Нам написали, что машина уже создана и что нужно использовать команду - provision
+или фалаг - --provision, чтобы внести изменения.
+
+Вывполним рекомендованную команду
+
+$ vagrant up --provision
+
+$ vagrant up --provision
+==> vagrant: You have requested to enabled the experimental flag with the following features:
+==> vagrant:
+==> vagrant: Features:  disks
+==> vagrant:
+==> vagrant: Please use with caution, as some of the features may not be fully
+==> vagrant: functional yet.
+Bringing machine 'web' up with 'virtualbox' provider...
+==> web: Checking if box 'ubuntu/jammy64' version '20220531.0.0' is up to date...
+==> web: Running provisioner: shell...
+    web: Running: inline script
+    web: RTNETLINK answers: No such process
+    web: Information: You may need to update /etc/fstab.
+    web:
+    web: Information: You may need to update /etc/fstab.
+    web:
+    web: mke2fs 1.46.5 (30-Dec-2021)
+Creating filesystem with 5240320 4k blocks and 1310720 inodes
+    web: Filesystem UUID: 00141bde-ad9b-4454-8110-bfa46622a0ff
+    web: Superblock backups stored on blocks:
+    web: 	32768, 98304, 163840, 229376, 294912, 819200, 884736, 1605632, 2654208,
+    web: 	4096000
+    web:
+    web: Allocating group tables: done
+    web: Writing inode tables: done
+    web: Creating journal (32768 blocks): done
+    web: Writing superblocks and filesystem accounting information: done
+    web:
+
+
+Посмотрим были ли изменения
+
+$ vagrant ssh web
+
+vagrant@web:~$ df -h
+Filesystem      Size  Used Avail Use% Mounted on
+tmpfs           198M 1000K  197M   1% /run
+/dev/sda1        39G  1.4G   38G   4% /
+tmpfs           989M     0  989M   0% /dev/shm
+tmpfs           5.0M     0  5.0M   0% /run/lock
+vagrant          59G   47G   12G  80% /vagrant
+/dev/sdc1        20G   24K   19G   1% /mnt
+tmpfs           198M  4.0K  198M   1% /run/user/1000
+vagrant@web:~$
+vagrant@web:~$ exit
+
+
+
+Да, диск - content смонтирован.
+
+Таким образом мы не удаляя нашу машину смогли изменить shell скрипт.
+
+
+
+Теперь такой нюанс. Да, мы знаем как себя вести, когда мы сделали изменения в - provision.
+Что если мы хотим поменять что-то другое. Например изменить имя, или добавить количество процессоров,
+больше поставить оперативки и т.д. и т.п.
+
+Давайте сделаем некоторые изменения, а именно - переназначим память - 1ГБ и уменьшим
+количество процессоров до 3.
+
+***************************************************
+
+Vagrant.configure("2") do |config|
+
+  ...
+
+  config.vm.provider "virtualbox" do |vb|
+
+     ...
+
+     vb.memory = "1024"
+     vb.cpus = 3
+
+   end
+
+end
+
+***************************************************
+
+Теперь нужно запустить вот такую команду
+
+$ vagrant reload web
+
+==> web: Attempting graceful shutdown of VM...
+
+...
+
+$ vagrant ssh web
+
+vagrant@web:~$ free -h
+               total        used        free      shared  buff/cache   available
+Mem:           970Mi       188Mi       511Mi       0.0Ki       270Mi       636Mi
+Swap:             0B          0B          0B
+vagrant@web:~$ cat /proc/cpuinfo | grep "cpu cores"
+cpu cores	: 3
+cpu cores	: 3
+cpu cores	: 3
+vagrant@web:~$
+vagrant@web:~$ exit
+
+Как мы видим машина выключилась, и запустилась с новыми настройками.
+
+Если мы хотим сделать изменения и в provision одновременно с другими изменениями, то можно запустить вот так команду
+
+$ vagrant reload --provision
+
+
+С окончательным видом vagrantfile'а можно ознакомиться в диреткории с проектом
+
+Не забываем удалить инфраструктуру, если она вам не нужна
+
+$ vagrant destroy

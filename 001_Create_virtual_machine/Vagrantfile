@@ -1,0 +1,35 @@
+
+Vagrant.configure("2") do |config|
+
+  config.vm.box = "ubuntu/jammy64"
+  config.vm.define "web"        # name in vagrant
+  config.vm.hostname = "web"    # hostname
+
+  config.vm.network "public_network", bridge: "wlp3s0",
+    use_dhcp_assigned_default_route: true
+
+  # VAGRANT_EXPERIMENTAL="disks"
+  config.vm.disk :disk, name: "content", size: "20GB"
+
+  config.vm.provider "virtualbox" do |vb|
+
+     vb.name = "web-jammy"            # name in VirtualBox
+
+     vb.memory = "1024"
+     vb.cpus = 3
+
+     vb.default_nic_type = "82543GC"
+
+   end
+
+   config.vm.provision "shell", inline: <<-SHELL
+     ip route del default via 10.0.2.2
+     # Add content disk
+     parted /dev/sdc mklabel msdos
+     parted /dev/sdc mkpart primary ext4 10MiB 100%
+     mkfs.ext4 /dev/sdc1
+     mount /dev/sdc1 /mnt
+   SHELL
+
+
+end
