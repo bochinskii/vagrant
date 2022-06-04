@@ -10,238 +10,85 @@ Rancher - это сервер управления Kubernetes кластерам
 - Сервер Rancher;
 - Ноды - 3 штуки (на которых будут запускаться приложения в контейнерах)
 
-Для наполняемости Vagrantfile сделаем так. 
+Для наполняемости Vagrantfile сделаем так.
 Сервер - rancher будет иметь два дополнительных сетевых интерфейсов: bridg (192.168.0.200/24), hostonly (10.1.1.200/24).
 Ноды будут иметь только один дополнительный интерфейс - hostonly (10.1.1.201/24 - 10.1.1.203/24).
-Таким образом ноды будут подключаться к rancher через данный приватный (hostonly) интерфейс. 
+Таким образом ноды будут подключаться к rancher через данный приватный (hostonly) интерфейс.
 
-Займемся подготовительными работами
 
-# echo "10.1.1.200    rancher.int" > /etc/hosts
+$ mkdir ./003_Create_rancher_cluster_with_circles && cd ./003_Create_rancher_cluster_with_circles
 
-# mkdir /vagrant/rancher_cluster && cd /vagrant/rancher_cluster
+Тут опять же, если не хотите заморачиваться с "дополнительной" настройкой для ansible, то можете посмотреть
+в директорию light_verison. Там рабочий вариант без лишних настроек.
 
-# mkdir {keys,provisioning}
+Если же хотите "заморочится", то давайте дальше.
 
-# mkdir provisioning/group_vars
+$ mkdir {keys,provisioning}
+
+$ mkdir provisioning/group_vars
 
 Генрируем ключи
 
 # ssh-keygen -b 4096 -t rsa -f keys/rancher-cluster.key -C vagrant
 
-Создаем все необходимое чтобы работать с ansible
+----------------------------------------------------------------------------
+Заметка:
+
+Как видно из playbook, мы использовали модули, которые не поставляются по-умолчанию
+в старых версиях ansible. Если у вас старая версия - ниже 2.0.0, то возможно вам нужно
+будет выпонить команды, которые приведенны ниже
+
+Для того, чтобы использовать parted
+
+$ ansible-galaxy collection install community.general
+
+Для возможности монтирования дисков
+
+$ ansible-galaxy collection install ansible.posix
 
 Для работы ansible с docker
 
-# ansible-galaxy collection install community.docker
+$ ansible-galaxy collection install community.docker
+
+----------------------------------------------------------------------------
+
+
 
 Тут мы придумали переменную - nodename_prefix для того, чтобы потом фильтровать в playbook.
 
-# cat > provisioning/hosts <<EOF
+$ cat > provisioning/hosts <<EOF
 [rancher_cluster]
 rancher	      ansible_host=10.1.1.200   nodename_prefix=ranchers
 node-001      ansible_host=10.1.1.201   nodename_prefix=nodes
 node-002      ansible_host=10.1.1.202   nodename_prefix=nodes
 node-003      ansible_host=10.1.1.203   nodename_prefix=nodes
-#
+EOF
 
 
-# cat > provisioning/group_vars/rancher_cluster <<EOF
-[rancher_cluster]
+$ cat > provisioning/group_vars/rancher_cluster <<EOF
 ---
 
 ansible_connection: ssh
 ansible_port: 22
 ansible_user: vagrant
 ansible_ssh_private_key_file: ../keys/rancher-cluster.key
-#
+EOF
 
-Создаем Playbook.
+Создаем Playbook. С ним можно ознакомится в директории с проектом
+
 Тут мы просто на все сервера сделали все что необходимо для установки docker.
-На сервере - rancher запустили контейнер с rancher сервером (v2.5).
+На сервере - rancher запустили контейнер с rancher сервером (v2.4-head).
 На нодах для изящности добавили в hosts файл ip адрес и имя rancher сервера.
 
-# cat provisioning/playbook.yml
 
-***********************************************
+Ну, и теперь подготавливаем Vagrantfile. С ним так же можно ознакомиться в
+директории с проектом
 
----
-
-- name: Rancher Cluster Installation
-  hosts: rancher_cluster
-  become: yes
-
-  vars:
-    release: focal
-
-  tasks: # ----------- General ---------- #
-
-  - name: Install aptitude using apt
-    apt:
-      pkg: aptitude
-      state: latest
-      update_cache: yes
-      force_apt_get: yes
-
-  - name: Install required system packages
-    apt:
-      pkg:
-      - apt-transport-https
-      - ca-certificates
-      - curl
-      - gnupg
-      - lsb-release
-      - software-properties-common
-      - python3-pip
-      - virtualenv
-      - python3-setuptools
-      state: latest
-      update_cache: yes
-
-  - name: Add Docker GPG apt Key
-    apt_key:
-      url: https://download.docker.com/linux/ubuntu/gpg
-      state: present
-
-  - name: Add Docker Repository
-    apt_repository:
-      repo: "deb https://download.docker.com/linux/ubuntu {{ release }} stable"
-      state: present
-
-  - name: Install all need for docker
-    apt:
-      update_cache: yes
-      pkg:
-      - docker-ce
-      - docker-ce-cli
-      - containerd.io
-      state: latest
-
-  - name: Install Docker Module for Python
-    pip:
-      name: docker
-
-  - name: User "vagrant" appending the group "docker"
-    user:
-      name: vagrant
-      groups: docker
-      append: yes
-
-  - block: # ------- Rancher --------- #
-
-    - name: Create Rancher container
-      docker_container:
-        name: rancher-container
-        image: rancher/rancher:latest
-        state: started
-        restart_policy: unless-stopped
-        detach: true
-        privileged: yes
-        ports:
-        - 80:80
-        - 443:443
-    when: ansible_nodename == "ranchers"
-
-  - block: # ------- Nodes --------- #
-
-    - name: Redo hosts file
-      shell: echo "10.1.1.200   rancher.int" >> /etc/hosts
-
-    when: nodename_prefix == "nodes"
-
-*************************************************
-
-Ну, и теперь подготавливаем Vagrantfile
-
-*********************************************
-
-Vagrant.configure("2") do |config|
-
-  # SSH Settings
-  config.ssh.insert_key = false
-  config.ssh.private_key_path = ["keys/rancher-cluster.key", "~/.vagrant.d/insecure_private_key"]
-
-  # Add public key
-  config.vm.provision "shell" do |key|
-    ssh_pub_key = File.readlines("keys/rancher-cluster.key.pub").first.strip
-    key.inline = <<-SHELL
-      mkdir -p /home/vagrant/.ssh/
-      touch /home/vagrant/.ssh/authorized_keys
-      echo #{ssh_pub_key} > /home/vagrant/.ssh/authorized_keys
-      chown -R vagrant:vagrant /home/vagrant
-      exit 0
-    SHELL
-  end
-
-  # Ansible Settings
-  config.vm.provision "ansible" do |ansible|
-    ansible.playbook = "provisioning/playbook.yml"
-    ansible.inventory_path = "provisioning/hosts"
-  end
-
-#------------------ RANCHER ------------------------------------------
-  config.vm.define "rancher" do |rancher|
-    rancher.vm.box = "ubuntu/focal64"
-    rancher.vm.hostname = "rancher"
-
-    rancher.vm.synced_folder ".", "/vagrant", disabled: true
-
-    rancher.vm.network "public_network", bridge: "wlp3s0",
-      ip: "192.168.0.200",
-      netmask:"255.255.255.0",
-      gateway: "192.168.0.254"
-
-    rancher.vm.network "private_network",
-      ip: "10.1.1.200",
-      netmask:"255.255.255.0"
-
-    rancher.vm.provider "virtualbox" do |virtualbox|
-      virtualbox.name = "rancher"
-      virtualbox.memory = "4096"
-      virtualbox.cpus = 3
-
-      virtualbox.default_nic_type = "82543GC"
-    end # end provider
-
-     rancher.vm.provision "shell", inline: <<-SHELL
-       ip route del default via 10.0.2.2
-     SHELL
-
-  end # end define
-#------------------------------------------------------------
-#
-#---------------------- NODES -------------------------------------
-  (1..3).each do |i|
-    config.vm.define "node-00#{i}" do |node|
-      node.vm.box = "ubuntu/focal64"
-      node.vm.hostname = "node-00#{i}"
-
-      node.vm.synced_folder ".", "/vagrant", disabled: true
-
-      node.vm.network "private_network",
-        ip: "10.1.1.20#{i}",
-        netmask:"255.255.255.0"
-
-      node.vm.provider "virtualbox" do |virtualbox|
-        virtualbox.name = "node-00#{i}"
-        virtualbox.memory = "1024"
-        virtualbox.cpus = 3
-
-        virtualbox.default_nic_type = "82543GC"
-      end # end provider
-
-    end # end define
-
-  end # end loop
-
-#---------------------------------------------------------------------#
-
-end
-
-*********************************************
 
 Тут чуток опишем.
+
 В прошлый раз мы весь код писали в основном контексте
+
 
 Vagrant.configure("2") do |config|
 
@@ -249,13 +96,16 @@ Vagrant.configure("2") do |config|
 
 end
 
+
 Это нормально, когда нам нужно запустить одну виртуальную машину в одном Vagrantfile.
 
 Но что делать если нам нужно несколько машин (как в нашем случае)
 
 Вот ответ - директива define.
-Кстати, мы в прошлый раз уже использовали данную директиву - config.vm.define "lamp-cen7".
-Но она может иметь более сложную структуру, которая используется для того, чтобы описать параметры касающиеся именно определенной машины.
+Кстати, мы в прошлый раз уже использовали данную директиву - config.vm.define "lamp-jammy".
+Но она может иметь более сложную структуру, которая используется для того, чтобы
+описать параметры касающиеся именно определенной машины.
+
 
 config.vm.define "server1" do |server1|
 
@@ -263,305 +113,36 @@ config.vm.define "server1" do |server1|
 
 end
 
+
 config.vm.define "server2" do |server2|
 
 # Bla bla bla
 
 end
 
+
 Далее, для создания нод, мы использовали всю туже директиву - define, но с цыклом.
 Дело в том, что ноды у нас идентичные, поэтому чтобы не повторять код, мы использовали цикл.
 
+
 (1..3).each do |i|
   config.vm.define "node-00#{i}" do |node|
-   
 
-  end 
+
+  end
 
 end
 
+
+
 Все что общее для всех серверов мы описали в контексте - configure, а именно создание ssh ключа, а так же настройки ansible.
 
-Запустим vagrant
+
+
+Теперь, запустим vagrant
 
 # vagrant up
 
-Bringing machine 'rancher' up with 'virtualbox' provider...
-Bringing machine 'node-001' up with 'virtualbox' provider...
-Bringing machine 'node-002' up with 'virtualbox' provider...
-Bringing machine 'node-003' up with 'virtualbox' provider...
-==> rancher: Importing base box 'ubuntu/focal64'...
-==> rancher: Matching MAC address for NAT networking...
-==> rancher: Checking if box 'ubuntu/focal64' version '20211007.0.0' is up to date...
-==> rancher: Setting the name of the VM: rancher
-==> rancher: Clearing any previously set network interfaces...
-==> rancher: Preparing network interfaces based on configuration...
-    rancher: Adapter 1: nat
-    rancher: Adapter 2: bridged
-    rancher: Adapter 3: hostonly
-==> rancher: Forwarding ports...
-    rancher: 22 (guest) => 2222 (host) (adapter 1)
-==> rancher: Running 'pre-boot' VM customizations...
-==> rancher: Booting VM...
-==> rancher: Waiting for machine to boot. This may take a few minutes...
-    rancher: SSH address: 127.0.0.1:2222
-    rancher: SSH username: vagrant
-    rancher: SSH auth method: private key
-    rancher: Warning: Connection reset. Retrying...
-    rancher: Warning: Remote connection disconnect. Retrying...
-==> rancher: Machine booted and ready!
-==> rancher: Checking for guest additions in VM...
-==> rancher: Setting hostname...
-==> rancher: Configuring and enabling network interfaces...
-==> rancher: Running provisioner: shell...
-    rancher: Running: inline script
-==> rancher: Running provisioner: ansible...
-    rancher: Running ansible-playbook...
-
-PLAY [Rancher Cluster Installation] ********************************************
-
-TASK [Gathering Facts] *********************************************************
-ok: [rancher]
-
-TASK [Install aptitude using apt] **********************************************
-changed: [rancher]
-
-TASK [Install required system packages] ****************************************
-changed: [rancher]
-
-TASK [Add Docker GPG apt Key] **************************************************
-changed: [rancher]
-
-TASK [Add Docker Repository] ***************************************************
-changed: [rancher]
-
-TASK [Install all need for docker] *********************************************
-changed: [rancher]
-
-TASK [Install Docker Module for Python] ****************************************
-changed: [rancher]
-
-TASK [User "vagrant" appending the group "docker"] *****************************
-changed: [rancher]
-
-TASK [Create Rancher container] ************************************************
-changed: [rancher]
-
-TASK [Redo hosts file] *********************************************************
-skipping: [rancher]
-
-PLAY RECAP *********************************************************************
-rancher                    : ok=9    changed=8    unreachable=0    failed=0    skipped=1    rescued=0    ignored=0   
-
-==> rancher: Running provisioner: shell...
-    rancher: Running: inline script
-==> node-001: Importing base box 'ubuntu/focal64'...
-==> node-001: Matching MAC address for NAT networking...
-==> node-001: Checking if box 'ubuntu/focal64' version '20211007.0.0' is up to date...
-==> node-001: A newer version of the box 'ubuntu/focal64' for provider 'virtualbox' is
-==> node-001: available! You currently have version '20211007.0.0'. The latest is version
-==> node-001: '20211015.0.0'. Run `vagrant box update` to update.
-==> node-001: Setting the name of the VM: node-001
-==> node-001: Fixed port collision for 22 => 2222. Now on port 2200.
-==> node-001: Clearing any previously set network interfaces...
-==> node-001: Preparing network interfaces based on configuration...
-    node-001: Adapter 1: nat
-    node-001: Adapter 2: hostonly
-==> node-001: Forwarding ports...
-    node-001: 22 (guest) => 2200 (host) (adapter 1)
-==> node-001: Running 'pre-boot' VM customizations...
-==> node-001: Booting VM...
-==> node-001: Waiting for machine to boot. This may take a few minutes...
-    node-001: SSH address: 127.0.0.1:2200
-    node-001: SSH username: vagrant
-    node-001: SSH auth method: private key
-    node-001: Warning: Remote connection disconnect. Retrying...
-    node-001: Warning: Connection reset. Retrying...
-==> node-001: Machine booted and ready!
-==> node-001: Checking for guest additions in VM...
-==> node-001: Setting hostname...
-==> node-001: Configuring and enabling network interfaces...
-==> node-001: Running provisioner: shell...
-    node-001: Running: inline script
-==> node-001: Running provisioner: ansible...
-    node-001: Running ansible-playbook...
-
-PLAY [Rancher Cluster Installation] ********************************************
-
-TASK [Gathering Facts] *********************************************************
-ok: [node-001]
-
-TASK [Install aptitude using apt] **********************************************
-changed: [node-001]
-
-TASK [Install required system packages] ****************************************
-changed: [node-001]
-
-TASK [Add Docker GPG apt Key] **************************************************
-changed: [node-001]
-
-TASK [Add Docker Repository] ***************************************************
-changed: [node-001]
-
-TASK [Install all need for docker] *********************************************
-changed: [node-001]
-
-TASK [Install Docker Module for Python] ****************************************
-changed: [node-001]
-
-TASK [User "vagrant" appending the group "docker"] *****************************
-changed: [node-001]
-
-TASK [Create Rancher container] ************************************************
-skipping: [node-001]
-
-TASK [Redo hosts file] *********************************************************
-changed: [node-001]
-
-PLAY RECAP *********************************************************************
-node-001                   : ok=9    changed=8    unreachable=0    failed=0    skipped=1    rescued=0    ignored=0   
-
-==> node-002: Importing base box 'ubuntu/focal64'...
-==> node-002: Matching MAC address for NAT networking...
-==> node-002: Checking if box 'ubuntu/focal64' version '20211007.0.0' is up to date...
-==> node-002: Setting the name of the VM: node-002
-==> node-002: Fixed port collision for 22 => 2222. Now on port 2201.
-==> node-002: Clearing any previously set network interfaces...
-==> node-002: Preparing network interfaces based on configuration...
-    node-002: Adapter 1: nat
-    node-002: Adapter 2: hostonly
-==> node-002: Forwarding ports...
-    node-002: 22 (guest) => 2201 (host) (adapter 1)
-==> node-002: Running 'pre-boot' VM customizations...
-==> node-002: Booting VM...
-==> node-002: Waiting for machine to boot. This may take a few minutes...
-    node-002: SSH address: 127.0.0.1:2201
-    node-002: SSH username: vagrant
-    node-002: SSH auth method: private key
-    node-002: Warning: Connection reset. Retrying...
-    node-002: Warning: Remote connection disconnect. Retrying...
-==> node-002: Machine booted and ready!
-==> node-002: Checking for guest additions in VM...
-==> node-002: Setting hostname...
-==> node-002: Configuring and enabling network interfaces...
-==> node-002: Running provisioner: shell...
-    node-002: Running: inline script
-==> node-002: Running provisioner: ansible...
-    node-002: Running ansible-playbook...
-
-PLAY [Rancher Cluster Installation] ********************************************
-
-TASK [Gathering Facts] *********************************************************
-ok: [node-002]
-
-TASK [Install aptitude using apt] **********************************************
-changed: [node-002]
-
-TASK [Install required system packages] ****************************************
-changed: [node-002]
-
-TASK [Add Docker GPG apt Key] **************************************************
-changed: [node-002]
-
-TASK [Add Docker Repository] ***************************************************
-changed: [node-002]
-
-TASK [Install all need for docker] *********************************************
-changed: [node-002]
-
-TASK [Install Docker Module for Python] ****************************************
-changed: [node-002]
-
-TASK [User "vagrant" appending the group "docker"] *****************************
-changed: [node-002]
-
-TASK [Create Rancher container] ************************************************
-skipping: [node-002]
-
-TASK [Redo hosts file] *********************************************************
-changed: [node-002]
-
-PLAY RECAP *********************************************************************
-node-002                   : ok=9    changed=8    unreachable=0    failed=0    skipped=1    rescued=0    ignored=0   
-
-==> node-003: Importing base box 'ubuntu/focal64'...
-==> node-003: Matching MAC address for NAT networking...
-==> node-003: Checking if box 'ubuntu/focal64' version '20211007.0.0' is up to date...
-==> node-003: Setting the name of the VM: node-003
-==> node-003: Fixed port collision for 22 => 2222. Now on port 2202.
-==> node-003: Clearing any previously set network interfaces...
-==> node-003: Preparing network interfaces based on configuration...
-    node-003: Adapter 1: nat
-    node-003: Adapter 2: hostonly
-==> node-003: Forwarding ports...
-    node-003: 22 (guest) => 2202 (host) (adapter 1)
-==> node-003: Running 'pre-boot' VM customizations...
-==> node-003: Booting VM...
-==> node-003: Waiting for machine to boot. This may take a few minutes...
-    node-003: SSH address: 127.0.0.1:2202
-    node-003: SSH username: vagrant
-    node-003: SSH auth method: private key
-    node-003: Warning: Connection reset. Retrying...
-    node-003: Warning: Remote connection disconnect. Retrying...
-==> node-003: Machine booted and ready!
-==> node-003: Checking for guest additions in VM...
-==> node-003: Setting hostname...
-==> node-003: Configuring and enabling network interfaces...
-==> node-003: Running provisioner: shell...
-    node-003: Running: inline script
-==> node-003: Running provisioner: ansible...
-    node-003: Running ansible-playbook...
-
-PLAY [Rancher Cluster Installation] ********************************************
-
-TASK [Gathering Facts] *********************************************************
-ok: [node-003]
-
-TASK [Install aptitude using apt] **********************************************
-changed: [node-003]
-
-TASK [Install required system packages] ****************************************
-changed: [node-003]
-
-TASK [Add Docker GPG apt Key] **************************************************
-changed: [node-003]
-
-TASK [Add Docker Repository] ***************************************************
-changed: [node-003]
-
-TASK [Install all need for docker] *********************************************
-changed: [node-003]
-
-TASK [Install Docker Module for Python] ****************************************
-changed: [node-003]
-
-TASK [User "vagrant" appending the group "docker"] *****************************
-changed: [node-003]
-
-TASK [Create Rancher container] ************************************************
-skipping: [node-003]
-
-TASK [Redo hosts file] *********************************************************
-changed: [node-003]
-
-PLAY RECAP *********************************************************************
-node-003                   : ok=9    changed=8    unreachable=0    failed=0    skipped=1    rescued=0    ignored=0 
-
-
-Проверим, запустились ли наши машины
-
-# vagrant status
-
-Current machine states:
-
-rancher                   running (virtualbox)
-node-001                  running (virtualbox)
-node-002                  running (virtualbox)
-node-003                  running (virtualbox)
-
-This environment represents multiple VMs. The VMs are all listed
-above with their current state. For more information about a specific
-VM, run `vagrant status NAME`.
 
 
 Проверим, что rancher работает
@@ -575,3 +156,9 @@ X-Api-Schemas: https://rancher.int/meta/schemas
 X-Content-Type-Options: nosniff
 Date: Sun, 17 Oct 2021 09:57:36 GMT
 
+Или можно зайти через web интерфейс и создать кластер.
+
+
+Ну, и не забываем удалять
+
+$ vagrant destroy

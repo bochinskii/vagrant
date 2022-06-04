@@ -1,0 +1,23 @@
+---
+
+- name: Apache Installation
+  hosts: test_env_app
+  become: yes
+
+  tasks:
+
+  - name: Install Apache
+    apt:
+      pkg:
+      - apache2
+      - apache2-utils
+      state: latest
+      update_cache: yes
+      force_apt_get: yes
+
+  - name: Start apache server
+    systemd:
+      name: apache2
+      enabled: yes
+      masked: no
+      state: started

@@ -1,0 +1,89 @@
+---
+
+- name: Database
+  hosts: all
+  become: yes
+
+  vars:
+    mysql_data: /var/lib/mysql
+    mounted_dev: /dev/sdc
+    mounted_part: /dev/sdc1
+    release: jammy
+
+  tasks:
+
+  - name: Create a new ext4 primary partition
+    community.general.parted:
+      device: "{{ mounted_dev }}"
+      label: msdos
+      number: 1
+      part_start: 1MiB
+      part_end: "100%"
+      state: present
+      fs_type: ext4
+
+  - name: Create a ext4 filesystem on /dev/sdc1
+    community.general.filesystem:
+      fstype: ext4
+      dev: "{{ mounted_part }}"
+
+  - name: Create a directory if it does not exist
+    file:
+      path: "{{ mysql_data }}"
+      state: directory
+      mode: '0777'
+
+  - name: Mount mysql data
+    ansible.posix.mount:
+      path: "{{ mysql_data }}"
+      src: "{{ mounted_part }}"
+      fstype: ext4
+      state: mounted
+
+  - name: Install Software properties
+    apt:
+      pkg: software-properties-common
+      state: latest
+      update_cache: yes
+      force_apt_get: yes
+
+  - name: Add an Apt signing key for mariadb
+    apt_key:
+      url: https://mariadb.org/mariadb_release_signing_key.asc
+      state: present
+
+  - name: Add specified repository into sources list
+    apt_repository:
+      repo: "deb http://mariadb.mirror.globo.tech/repo/10.9/ubuntu {{ release }} main"
+      state: present
+
+  - name: Install MariaDB
+    apt:
+      pkg:
+      - mariadb-server
+      - mariadb-client
+      state: latest
+      update_cache: yes
+
+  - name: Stop MariaDB server
+    systemd:
+      name: mariadb.service
+      enabled: yes
+      masked: no
+      state: stopped
+
+  - name: Change file ownership, group and permissions
+    file:
+      path: "{{ mysql_data }}"
+      state: directory
+      recurse: yes
+      owner: mysql
+      group: mysql
+      mode: '0755'
+
+  - name: Start MariaDB server
+    systemd:
+      name: mariadb.service
+      enabled: yes
+      masked: no
+      state: started

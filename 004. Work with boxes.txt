@@ -13,60 +13,62 @@
 
 Посмотрим какие box у нас есть
 
-# vagrant box list
-centos/7 (virtualbox, 2004.01)
+$ vagrant box list
+ubuntu/jammy64 (virtualbox, 20220531.0.0)
 
 Скачаем сами напимер ubuntu (ubuntu/focal64)
 
-# vagrant box add --provider virtualbox ubuntu/focal64
-==> box: Loading metadata for box 'ubuntu/focal64'
-    box: URL: https://vagrantcloud.com/ubuntu/focal64
-==> box: Adding box 'ubuntu/focal64' (v20211007.0.0) for provider: virtualbox
-    box: Downloading: https://vagrantcloud.com/ubuntu/boxes/focal64/versions/20211007.0.0/providers/virtualbox.box
-==> box: Box download is resuming from prior download progress
-Download redirected to host: cloud-images.ubuntu.com
-==> box: Successfully added box 'ubuntu/focal64' (v20211007.0.0) for 'virtualbox'!
+$ vagrant box add --provider virtualbox debian/bullseye64
+
+...
 
 Теперь у нас два образа локально находятся.
 
-# vagrant box list
-centos/7       (virtualbox, 2004.01)
-ubuntu/focal64 (virtualbox, 20211007.0.0)
+$ vagrant box list
+debian/bullseye64 (virtualbox, 11.20220328.1)
+ubuntu/jammy64    (virtualbox, 20220531.0.0)
 
-Давайте удалим ubuntu
 
-# vagrant box remove ubuntu/focal64
+
+
+
+Давайте удалим debian
+
+$ vagrant box remove debian/bullseye64
 
 или более точная команда (она нужна если у вас много образов с одинаковым именем, но для разных провайдеров и/или разных версий)
 
-# vagrant box remove --provider virtualbox --box-version 20211007.0.0 ubuntu/focal64
+$ vagrant box remove --provider virtualbox --box-version 11.20220328.1 debian/bullseye64
+Removing box 'debian/bullseye64' (v11.20220328.1) with provider 'virtualbox'...
 
-# vagrant box list
-centos/7 (virtualbox, 2004.01)
+$ vagrant box list
+ubuntu/jammy64 (virtualbox, 20220531.0.0)
+
+
+
+
 
 Вот как можно обновить уже имеющийся локально образ (в нашем случае обновления не понадобились)
 
-# vagrant box update --box centos/7 --provider virtualbox
+$ vagrant box update --box ubuntu/jammy64 --provider virtualbox
 
-Checking for updates to 'centos/7'
-Latest installed version: 2004.01
-Version constraints: > 2004.01
-Provider: virtualbox
-Box 'centos/7' (v2004.01) is running the latest version.
-# 
+ ...
 
 Проверить нужно ли образам/конкретному образу обновления (--global - для всех имеющихся образов)
 
-# vagrant box outdated --global
-* 'centos/7' for 'virtualbox' (v2004.01) is up to date
+$ vagrant box outdated --global
+* 'ubuntu/jammy64' for 'virtualbox' (v20220531.0.0) is up to date
+
 
 Удалить все старые версии образом, при том, что у нас есть новые
 
-# vagrant box prune
+$ vagrant box prune
 
 Кстати, можно выводить справку по каждой подкоманды, например
 
-# vagrant box remove --help
+$ vagrant box remove --help
+
+
 
 
 ---------------------------------------------------------------------
@@ -98,7 +100,7 @@ Box 'centos/7' (v2004.01) is running the latest version.
 - Пароль у root долен быть - vagrant.
 - Включить сетевой интерфейс. Он должет быть типа - DHCP.
 
-Вот создали мы виртуальную машину с именем - Rocky-8.4. 
+Вот создали мы виртуальную машину с именем - Rocky-8.4.
 Установили мы ситему (Rocky linux 8.4) и залогинились под - vagrant.
 
 
@@ -114,7 +116,7 @@ vagrant ALL=(ALL) NOPASSWD: ALL
 
 UseDNS no
 
-Для того, чтобы Vagrant мог полнофункционально работать с Vbox машинами (создавать шару и т.п.) нужно установить Дополнения гостевой ОС. 
+Для того, чтобы Vagrant мог полнофункционально работать с Vbox машинами (создавать шару и т.п.) нужно установить Дополнения гостевой ОС.
 Для этого нужно вставить виртуальный диск в новосозданную ОС (Incert Guest Additions CD Image).
 
 (machine) # sudo mount /dev/cdrom /mnt/
@@ -138,7 +140,7 @@ mount: /mnt: WARNING: device write-protected, mounted read-only.
 
 Устанавливаем дополнения
 
-(machine) # sudo bash /mnt/VBoxLinuxAdditions.run 
+(machine) # sudo bash /mnt/VBoxLinuxAdditions.run
 
 (machine) # sudo umount /dev/cdrom
 
@@ -155,7 +157,7 @@ Vagrant, по умолчанию, использует приватный клю
 
 (machine) # wget --no-check-certificate https://raw.githubusercontent.com/hashicorp/vagrant/main/keys/vagrant.pub -O /home/vagrant/.ssh/authorized_keys
 
-(machine) # cat .ssh/authorized_keys 
+(machine) # cat .ssh/authorized_keys
 ssh-rsa AAAAB3NzaC1yc2EAAAABIwAAAQEA6NF8iallvQVp22WDkTkyrtvp9eWW6A8YVr+kz4TjGYe7gHzIw+niNltGEFHzD8+v1I2YJ6oXevct1YeS0o9HZyN1Q9qgCgzUFtdOKLv6IedplqoPkcmF0aYet2PkEDo3MlTBckFXPITAMzF8dJSIFo9D8HfdOV0IAdx4O7PtixWKn5y2hMNG0zQPyUecp4pzC6kivAIhyfHilFR61RGL+GPXQ2MWZWFYbAGjyiYJnAmCP3NOTd0jMZEnDkbUvxhMmBYSdETk1rRgm+R4LOzFUGaHqHDLKLX+FIPKcF96hrucXzcWyLbIbEgE98OHlnVYCzRdK8jlqm8tehUc9c9WhQ== vagrant insecure public key
 
 (machine) # chmod 700 /home/vagrant/.ssh/
@@ -204,7 +206,7 @@ upMins=$((uptime/60%60))
 #
 # System + Memory
 SYS_LOADS=$( cat /proc/loadavg | awk '{print $1}' )
-MEMORY_USED=$( free -b | grep Mem | awk '{print $3/$2 * 100.0}' ) 
+MEMORY_USED=$( free -b | grep Mem | awk '{print $3/$2 * 100.0}' )
 SWAP_USED_RAW=$( free -b | grep Swap | awk '{print $3}' )
 if [ $SWAP_USED_RAW -eq 0 ]
 then
@@ -234,7 +236,7 @@ echo -e $tcLtG " - System uptime : $upDays days $upHours hours $upMins minutes"
 echo -e $tcDkG "==============================================================="
 echo -e $tcRESET ""
 #
- 
+
 ********************************************************************************
 
 (machine) # sudo chmod 0777 /usr/local/sbin/dynmotd.bash
@@ -254,13 +256,16 @@ fi
 Правило хорошего тона будет указать версию box (мы к ней будем обращаться в скрипте - dynmotd.bash).
 Если вы будите обновлять версию box, то просто изменяйте данное значение.
 
-(machine) # cat /etc/box-version 
+(machine) # cat /etc/box-version
 
 ***************
 
 1.0.0
 
 ***************
+
+
+
 
 Ну, теперь все готова для создания box. Но, перед созданием вы можете установить все необходимое, что вам нужно.
 Давайте для примера установим дополнительные репозитори и популярные утилиты для администраторов.
@@ -271,83 +276,58 @@ fi
 (machine) # sudo dnf install net-tools
 
 
-Ну все, создаем образ. Переходим в хостовую машину. 
+Ну все, создаем образ. Переходим в хостовую машину.
 
-# mkdir /vagrant/Rocky-Linux-8.4 && cd /vagrant/Rocky-Linux-8.4
+$ mkdir ./Rocky-Linux-8.4 && cd ./Rocky-Linux-8.4
 
-# vagrant package --base Rocky-8.4 --output Linux-Rocky-8.4
+$ vagrant package --base Rocky-8.4 --output Linux-Rocky-8.4
 
 ==> Rocky-8.4: Exporting VM...
 ==> Rocky-8.4: Compressing package to: /vagrant/Rocky-Linux-8.4/Linux-Rocky-8.4
 
 Теперь у нас появился образ виртуальной машины (vagranr box)
-# ls -lh
+$ ls -lh
 total 1,3G
 -rw-rw-r-- 1 denisb denisb 1,3G окт 20 12:13 Linux-Rocky-8.4
 
 Добавим его в список доступных box.
 
-# vagrant box list
+$ vagrant box list
 
-ubuntu/focal64 (virtualbox, 20211007.0.0)
+ubuntu/jammy64 (virtualbox, 20220531.0.0)
 
-# vagrant box add Linux-Rocky-8.4 --name Rocky-Linux/8.4
+$ vagrant box add Linux-Rocky-8.4 --name Rocky-Linux/8.4
 ==> box: Box file was not detected as metadata. Adding it directly...
-==> box: Adding box 'Rocky-Linux/8.4' (v0) for provider: 
+==> box: Adding box 'Rocky-Linux/8.4' (v0) for provider:
     box: Unpacking necessary files from: file:///vagrant/Rocky-Linux-8.4/Linux-Rocky-8.4
 
 Вот появился "наш" box с установленной Rocky Linux 8.4
 
-# vagrant box list
+$ vagrant box list
 
 Rocky-Linux/8.4 (virtualbox, 0)
-ubuntu/focal64  (virtualbox, 20211007.0.0)
+ubuntu/jammy64 (virtualbox, 20220531.0.0)
 
 
 Теперь проверим
 
-# vagrant init Rocky-Linux/8.4
+$ vagrant init Rocky-Linux/8.4
 
-# vagrant up
+$ vagrant up
 
-vagrant up
-Bringing machine 'default' up with 'virtualbox' provider...
-==> default: Importing base box 'Rocky-Linux/8.4'...
-==> default: Matching MAC address for NAT networking...
-==> default: Setting the name of the VM: Rocky-Linux-84_default_1634722213686_2290
-==> default: Clearing any previously set network interfaces...
-==> default: Preparing network interfaces based on configuration...
-    default: Adapter 1: nat
-==> default: Forwarding ports...
-    default: 22 (guest) => 2222 (host) (adapter 1)
-==> default: Booting VM...
-==> default: Waiting for machine to boot. This may take a few minutes...
-    default: SSH address: 127.0.0.1:2222
-    default: SSH username: vagrant
-    default: SSH auth method: private key
-    default: 
-    default: Vagrant insecure key detected. Vagrant will automatically replace
-    default: this with a newly generated keypair for better security.
-    default: 
-    default: Inserting generated public key within guest...
-    default: Removing insecure key from the guest if it's present...
-    default: Key inserted! Disconnecting and reconnecting using new SSH key...
-==> default: Machine booted and ready!
-==> default: Checking for guest additions in VM...
-==> default: Mounting shared folders...
-    default: /vagrant => /vagrant/Rocky-Linux-8.4
+...
 
-Зайдем по ssh. 
+Зайдем по ssh.
 
 # vagrant ssh
 Last login: Wed Oct 20 12:07:58 2021
  ===============================================================
   Good afternoon !                         Denis Bochinskii
  ===============================================================
-                                                         
+
   This is Vagrant Box version - 1.0.0
   - Hostname      : localhost
-  - IP Address    : 10.0.2.15 
+  - IP Address    : 10.0.2.15
   - Release       : Rocky Linux release 8.4 (Green Obsidian)
   - Kernel        : Linux 4.18.0-305.3.1.el8_4.x86_64 x86_64
   - Users         : Currently 1 user(s) logged on
@@ -357,9 +337,7 @@ Last login: Wed Oct 20 12:07:58 2021
   - Swap used %   : 0
   - System uptime : 0 days 0 hours 0 minutes
  ===============================================================
- 
-[vagrant@localhost ~]$ 
+
+[vagrant@localhost ~]$
 
 Ну, что же. Все работает. Теперь можно регестрироваться на Vagran Cloud и заливать образ туда.
-
-

@@ -97,7 +97,7 @@ EOF
 
 $ ansible-galaxy collection install community.general
 
-Для возможности монтирования дисков и использования SELinux
+Для возможности монтирования дисков
 
 $ ansible-galaxy collection install ansible.posix
 

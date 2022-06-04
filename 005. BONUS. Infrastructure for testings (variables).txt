@@ -5,305 +5,67 @@
 ----------------------------------------------------------
 
 Предположим, что нам нужно поднять тестовую площадку:
-- 2 сервера приложений (СП). 2ГБ RAM,  
+- 2 сервера приложений (СП). 2ГБ RAM,
 - 2-х серверов баз данных(СБД). 1ГБ RAM, 2 HDD - 10ГБ.
 
-Начнем.
 
-# mkdir /vagrant/test-env && cd /vagrant/test-env
+Начнем
 
-# mkdir {keys,provisioning}
+$ mkdir /005_Bonus && cd ./005_Bonus
 
-# mkdir provisioning/group_vars
+Опять же, если не хотите заморачиваться с "дополнительной" настройкой для ansible, то можете посмотреть
+в директорию light_verison. Там рабочий вариант без лишних настроек.
+
+Если же хотите "заморочится", то давайте дальше.
+
+
+$ mkdir {keys,provisioning}
+
+$ mkdir provisioning/group_vars
 
 Генрируем ключи
 
-# ssh-keygen -b 4096 -t rsa -f keys/test-env.key -C vagrant
+$ ssh-keygen -b 4096 -t rsa -f keys/test-env.key -C vagrant
 
-# cat > provisioning/hosts <<EOF
+$ cat > provisioning/hosts <<EOF
 [test_env_app]
-app1.fdsdn.corp	 ansible_host=192.168.0.151    nodename_prefix=apps
+app1.fdsdn.corp	        ansible_host=192.168.0.151    nodename_prefix=apps
 app2.fdsdn.corp         ansible_host=192.168.0.152    nodename_prefix=apps
 
 [test_env_db]
 db1.fdsdn.corp          ansible_host=192.168.0.161    nodename_prefix=dbs
 db2.fdsdn.corp          ansible_host=192.168.0.162    nodename_prefix=dbs
-#
+EOF
 
 
-# cat > provisioning/group_vars/rancher_cluster <<EOF
-[rancher_cluster]
+$ cat > provisioning/group_vars/rancher_cluster <<EOF
 ---
 
 ansible_connection: ssh
 ansible_port: 22
 ansible_user: vagrant
 ansible_ssh_private_key_file: ../keys/test-env.key
-#
+EOF
 
-Создаем Playbook. Они у нас простенькие.
+Создаем Playbooks'ы. С нимим можно ознакомиться в диреткории с проектом.
 
-# cat provisioning/app.yml
+Создаем Vagrantfile. С ним, так же, можно ознакомится в директории с проектом.
 
-***********************************
-
----
-
-- name: Apache Installation
-  hosts: test_env_app
-  become: yes
-
-  tasks:
-
-  - name: Install Apache
-    apt:
-      pkg:
-      - apache2
-      - apache2-utils
-      state: latest
-      update_cache: yes
-      force_apt_get: yes
-
-  - name: Start apache server
-    systemd:
-      name: apache2
-      enabled: yes
-      masked: no
-      state: started
-
-
-***********************************
-
-# cat provisioning/db.yml
-
-*****************************************
-
----
-
-- name: Database
-  hosts: test_env_db
-  become: yes
-
-  vars:
-    temp_mysql_data: /tmp/mysql_tmp
-    mysql_data: /var/lib/mysql
-    mounted_dev: /dev/sdc
-    mounted_part: /dev/sdc1
-    release: focal
-
-  tasks:
-
-  - name: Create a new ext4 primary partition
-    community.general.parted:
-      device: "{{ mounted_dev }}"
-      label: msdos
-      number: 1
-      part_start: 1MiB
-      part_end: "100%"
-      state: present
-      fs_type: ext4
-
-  - name: Create a ext4 filesystem on /dev/sdc1
-    community.general.filesystem:
-      fstype: ext4
-      dev: "{{ mounted_part }}"
-
-  - name: Install Software properties
-    apt:
-      pkg: software-properties-common
-      state: latest
-      update_cache: yes
-      force_apt_get: yes
-
-  - name: Add an Apt signing key for mariadb
-    apt_key:
-      url: https://mariadb.org/mariadb_release_signing_key.asc
-      state: present
-
-  - name: Add specified repository into sources list
-    apt_repository:
-      repo: "deb http://mariadb.mirror.globo.tech/repo/10.5/ubuntu {{ release }} main"
-      state: present
-
-  - name: Install MariaDB
-    apt:
-      pkg:
-      - mariadb-server
-      - mariadb-client
-      state: latest
-      update_cache: yes
-
-  - name: Start MariaDB server
-    systemd:
-      name: mariadb.service
-      enabled: yes
-      masked: no
-      state: stopped
-
-  - name: Create a directory if it does not exist
-    file:
-      path: "{{ temp_mysql_data }}"
-      state: directory
-
-  - name: Copy mysql data folder to tmp folder
-    shell: rsync -aq "{{ mysql_data }}"/* "{{ temp_mysql_data }}"
-
-  - name: Remove all files in /var/lib/mysql
-    shell: rm -frd "{{ mysql_data }}"/*
-
-  - name: Mount mysql data
-    ansible.posix.mount:
-      path: "{{ mysql_data }}"
-      src: "{{ mounted_part }}"
-      fstype: ext4
-      state: mounted
-
-  - name: Change file ownership, group and permissions
-    file:
-      path: "{{ mysql_data }}"
-      state: directory
-      recurse: yes
-      owner: mysql
-      group: mysql
-      mode: '0755'
-
-  - name: Copy mysql data tmp folder to mysql folder
-    shell: rsync -aq "{{ temp_mysql_data }}"/* "{{ mysql_data }}"
-
-  - name: Start MariaDB server
-    systemd:
-      name: mariadb.service
-      enabled: yes
-      masked: no
-      state: started
-
-
-****************************************
-
-# nano Vagrantfile
-
-*******************************************
-
-BRIDGE_NET="192.168.0."
-GATEWAY="192.168.0.254"
-NETMASK="255.255.255.0"
-INTERNAL_NET="172.17.0."
-DOMAIN="fdsdn.corp"
-INVENTORY_PATH="provisioning/hosts"
-
-SERVERS=[
-  {
-    :HOSTNAME => "app1." + DOMAIN,
-    :IP_BR => BRIDGE_NET + "151",
-    :IP_INT => INTERNAL_NET + "151",
-    :CPU => "1",
-    :RAM => "2048",
-    :PLAYBOOK => "provisioning/app.yml"
-  },
-  {
-    :HOSTNAME => "app2." + DOMAIN,
-    :IP_BR => BRIDGE_NET + "152",
-    :IP_INT => INTERNAL_NET + "152",
-    :CPU => "1",
-    :RAM => "2048",
-    :PLAYBOOK => "provisioning/app.yml"
-  },
-  {
-    :HOSTNAME => "db1." + DOMAIN,
-    :IP_BR => BRIDGE_NET + "161",
-    :IP_INT => INTERNAL_NET + "161",
-    :CPU => "3",
-    :RAM => "1024",
-    :HDD_NAME => "db1_hdd.vdi",
-    :HDD_SIZE => "10240",
-    :PLAYBOOK => "provisioning/db.yml"
-
-  },
-  {
-    :HOSTNAME => "db2." + DOMAIN,
-    :IP_BR => BRIDGE_NET + "162",
-    :IP_INT => INTERNAL_NET + "162",
-    :CPU => "3",
-    :RAM => "1024",
-    :HDD_NAME => "db2_hdd.vdi",
-    :HDD_SIZE => "10240",
-    :PLAYBOOK => "provisioning/db.yml"
-  }
-]
-
-Vagrant.configure(2) do |config|
-
-    config.vm.synced_folder ".", "/vagrant", disabled: true
-
-    # SSH Settings
-    config.ssh.insert_key = false
-    config.ssh.private_key_path = ["keys/test-env.key", "~/.vagrant.d/insecure_private_key"]
-
-    # Add public key
-    config.vm.provision "shell" do |key|
-      ssh_pub_key = File.readlines("keys/test-env.key.pub").first.strip
-      key.inline = <<-SHELL
-        mkdir -p /home/vagrant/.ssh/
-        touch /home/vagrant/.ssh/authorized_keys
-        echo #{ssh_pub_key} > /home/vagrant/.ssh/authorized_keys
-        chown -R vagrant:vagrant /home/vagrant
-        exit 0
-      SHELL
-    end
-
-    SERVERS.each do |machine|
-
-        config.vm.define machine[:HOSTNAME] do |node|
-
-            node.vm.box = "ubuntu/focal64"
-            node.vm.hostname = machine[:HOSTNAME]
-            node.vm.network "public_network", bridge: "wlp3s0",
-              ip: machine[:IP_BR],
-              netmask: NETMASK,
-              gateway: GATEWAY
-            node.vm.network "private_network",
-              ip: machine[:IP_INT],
-              netmask: NETMASK
-
-            node.vm.provider "virtualbox" do |vb|
-
-                vb.memory = machine[:RAM]
-                vb.cpus = machine[:CPU]
-                vb.name = machine[:HOSTNAME]
-
-                # Добавление жесткого диска, если такой указан в конфигурации
-                if (!machine[:HDD_NAME].nil?)
-                    # Не создавать диск, если он уже существует
-                  unless File.exist?(machine[:HDD_NAME])
-                    vb.customize ["createhd", "--filename", machine[:HDD_NAME], "--size", machine[:HDD_SIZE]]
-                  end
-                  # Подключить созданный диск к поточной VM
-                  vb.customize ["storageattach", :id, "--storagectl", "SCSI", "--port", 2, "--device", 0, "--type", "hdd", "--medium", machine[:HDD_NAME]]
-                end # END if
-
-            end # END of provider
-
-            # Ansible Settings
-            node.vm.provision "ansible" do |ansible|
-              ansible.playbook = machine[:PLAYBOOK]
-              ansible.inventory_path = INVENTORY_PATH
-            end
-
-        end # END of define
-
-    end # END of SERVERS
-
-end # END of config
-
-*******************************************
 
 Тут мы начали использовать переменные, а так же использовали массив - SERVERS.
-Так же мы созадали и подключили виртуальные жесткие диски с помощью - customize, а не эксперементальным методом, как это делали в прошлые разы.
+Так же мы созадали и подключили виртуальные жесткие диски с помощью - customize,
+а не эксперементальным методом, как это делали в прошлые разы.
+
 Конфигурировали с помощью все того же ansible.
 
 Запускаем.
 
-# vagrant up
+$ vagrant up
 
-Вывод показывать не будем.
+...
 
+Можно проверять.
+
+Ну, и не забываем удалять
+
+$ vagrant destroy

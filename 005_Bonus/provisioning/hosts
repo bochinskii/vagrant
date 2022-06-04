@@ -1,0 +1,7 @@
+[test_env_app]
+app1.fdsdn.corp	        ansible_host=192.168.0.151    nodename_prefix=apps
+app2.fdsdn.corp         ansible_host=192.168.0.152    nodename_prefix=apps
+
+[test_env_db]
+db1.fdsdn.corp          ansible_host=192.168.0.161    nodename_prefix=dbs
+db2.fdsdn.corp          ansible_host=192.168.0.162    nodename_prefix=dbs

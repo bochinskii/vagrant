@@ -1,0 +1,99 @@
+---
+
+- name: Rancher Cluster Installation
+  hosts: all
+  become: yes
+
+  vars:
+    #release: focal
+    release: jammy
+
+  tasks: # ----------- General ---------- #
+
+  - name: Install aptitude using apt
+    apt:
+      pkg: aptitude
+      state: latest
+      update_cache: yes
+      force_apt_get: yes
+
+  - name: Install required system packages
+    apt:
+      pkg:
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - gnupg
+      - lsb-release
+      - software-properties-common
+      - python3-pip
+      - virtualenv
+      - python3-setuptools
+      state: latest
+      update_cache: yes
+
+  - name: Add Docker GPG apt Key
+    apt_key:
+      url: https://download.docker.com/linux/ubuntu/gpg
+      state: present
+
+  - name: Add Docker Repository
+    apt_repository:
+      repo: "deb https://download.docker.com/linux/ubuntu {{ release }} stable"
+      state: present
+
+  - name: Install all need for docker
+    apt:
+      update_cache: yes
+      pkg:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-compose-plugin
+      state: latest
+
+  - name: Install Docker Module for Python
+    pip:
+      name: docker
+
+  - name: User "vagrant" appending the group "docker"
+    user:
+      name: vagrant
+      groups: docker
+      append: yes
+
+  - block: # ------- Rancher --------- #
+
+    - name: Create Rancher container
+      docker_container:
+        name: rancher-container
+        image: rancher/rancher:v2.4-head
+        state: started
+        restart_policy: unless-stopped
+        detach: true
+        privileged: yes
+        ports:
+        - 80:80
+        - 443:443
+    when: ansible_nodename == "rancher"
+
+  - block: # ------- Node-001 --------- #
+
+    - name: Redo hosts file
+      shell: echo "192.168.56.200   rancher.int" >> /etc/hosts
+
+    when: ansible_nodename == "node-001"
+
+  - block: # ------- Node-002 --------- #
+
+    - name: Redo hosts file
+      shell: echo "192.168.56.200   rancher.int" >> /etc/hosts
+
+    when: ansible_nodename == "node-002"
+
+  - block: # ------- Node-003 --------- #
+
+    - name: Redo hosts file
+      shell: echo "192.168.56.200   rancher.int" >> /etc/hosts
+
+    when: ansible_nodename == "node-003"

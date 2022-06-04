@@ -1,0 +1,5 @@
+[rancher_cluster]
+rancher	      ansible_host=192.168.56.200   nodename_prefix=ranchers
+node-001      ansible_host=192.168.56.201   nodename_prefix=nodes
+node-002      ansible_host=192.168.56.202   nodename_prefix=nodes
+node-003      ansible_host=192.168.56.203   nodename_prefix=nodes

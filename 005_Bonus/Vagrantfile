@@ -1,0 +1,111 @@
+BRIDGE_NET="192.168.0."
+GATEWAY="192.168.0.1"
+NETMASK="255.255.255.0"
+INTERNAL_NET="192.168.56."
+INTERNAL_NETMASK="255.255.248.0"
+DOMAIN="fdsdn.corp"
+INVENTORY_PATH="provisioning/hosts"
+
+SERVERS=[
+  {
+    :HOSTNAME => "app1." + DOMAIN,
+    :IP_BR => BRIDGE_NET + "151",
+    :IP_INT => INTERNAL_NET + "151",
+    :CPU => "1",
+    :RAM => "2048",
+    :PLAYBOOK => "provisioning/app.yml"
+  },
+  {
+    :HOSTNAME => "app2." + DOMAIN,
+    :IP_BR => BRIDGE_NET + "152",
+    :IP_INT => INTERNAL_NET + "152",
+    :CPU => "1",
+    :RAM => "2048",
+    :PLAYBOOK => "provisioning/app.yml"
+  },
+  {
+    :HOSTNAME => "db1." + DOMAIN,
+    :IP_BR => BRIDGE_NET + "161",
+    :IP_INT => INTERNAL_NET + "161",
+    :CPU => "3",
+    :RAM => "1024",
+    :HDD_NAME => "db1_hdd.vdi",
+    :HDD_SIZE => "10240",
+    :PLAYBOOK => "provisioning/db.yml"
+
+  },
+  {
+    :HOSTNAME => "db2." + DOMAIN,
+    :IP_BR => BRIDGE_NET + "162",
+    :IP_INT => INTERNAL_NET + "162",
+    :CPU => "3",
+    :RAM => "1024",
+    :HDD_NAME => "db2_hdd.vdi",
+    :HDD_SIZE => "10240",
+    :PLAYBOOK => "provisioning/db.yml"
+  }
+]
+
+Vagrant.configure(2) do |config|
+
+    config.vm.synced_folder ".", "/vagrant", disabled: true
+
+    # SSH Settings
+    config.ssh.insert_key = false
+    config.ssh.private_key_path = ["keys/test-env.key", "~/.vagrant.d/insecure_private_key"]
+
+    # Add public key
+    config.vm.provision "shell" do |key|
+      ssh_pub_key = File.readlines("keys/test-env.key.pub").first.strip
+      key.inline = <<-SHELL
+        mkdir -p /home/vagrant/.ssh/
+        touch /home/vagrant/.ssh/authorized_keys
+        echo #{ssh_pub_key} > /home/vagrant/.ssh/authorized_keys
+        chown -R vagrant:vagrant /home/vagrant
+        exit 0
+      SHELL
+    end
+
+    SERVERS.each do |machine|
+
+        config.vm.define machine[:HOSTNAME] do |node|
+
+            node.vm.box = "ubuntu/jammy64"
+            node.vm.hostname = machine[:HOSTNAME]
+            node.vm.network "public_network", bridge: "wlp3s0",
+              ip: machine[:IP_BR],
+              netmask: NETMASK,
+              gateway: GATEWAY
+            node.vm.network "private_network",
+              ip: machine[:IP_INT],
+              netmask: INTERNAL_NETMASK
+
+            node.vm.provider "virtualbox" do |vb|
+
+                vb.memory = machine[:RAM]
+                vb.cpus = machine[:CPU]
+                vb.name = machine[:HOSTNAME]
+
+                # Добавление жесткого диска, если такой указан в конфигурации
+                if (!machine[:HDD_NAME].nil?)
+                    # Не создавать диск, если он уже существует
+                  unless File.exist?(machine[:HDD_NAME])
+                    vb.customize ["createhd", "--filename", machine[:HDD_NAME], "--size", machine[:HDD_SIZE]]
+                  end
+                  # Подключить созданный диск к поточной VM
+                  vb.customize ["storageattach", :id, "--storagectl", "SCSI", "--port", 2, "--device", 0, "--type", "hdd", "--medium", machine[:HDD_NAME]]
+                end # END if
+
+            end # END of provider
+
+            # Ansible Settings
+            node.vm.provision "ansible" do |ansible|
+              ansible.playbook = machine[:PLAYBOOK]
+              ansible.inventory_path = INVENTORY_PATH
+            end
+
+        end # END of define
+
+    end # END of SERVERS
+
+end # END of config
